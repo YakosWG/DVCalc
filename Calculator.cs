@@ -9,34 +9,32 @@ namespace DVCalc
 {
     internal static class Calculator
     {
-        private static long seed;
-        public static void setSeed(long seed)
+        private static uint state;
+        public static void setSeed(uint seed)
         {
 
-            Calculator.seed = seed;
+            Calculator.state = seed;
 
         }
 
-
-        //this function is lifted from turtleisaac's Pokeditor
-        //See https://github.com/turtleisaac/PokEditor-v2/blob/72ca6ab641f616b8be9a87624b81896baa45f947/src/com/turtleisaac/pokeditor/utilities/TrainerPersonalityCalculator.java
-        public static long getNextRandom()
+        // this code is partially lifted from turtleisaac's Pokeditor
+        // See https://github.com/turtleisaac/PokEditor-v2/blob/72ca6ab641f616b8be9a87624b81896baa45f947/src/com/turtleisaac/pokeditor/utilities/TrainerPersonalityCalculator.java
+        // and the pokeplatinum / pokeheartgold projects See: https://github.com/pret
+        public static uint getNextRandom()
         {
-            long random = 0x41c64e6d * seed + 0x6073;
+            state = 1103515245 * state + 24691;
 
-            //last 32 bits is new seed
-            seed = random & 0xFFFFFFFFL;
-
-            return random;
+            // Upper 16 bit are random value
+            return state >> 16;
         }
 
-        public static int findHighestDV(int trainerIdx, int trainerClassIdx, bool trainerClassMale, int pokeIdx, int pokeLevel, uint nature)
+        public static int findHighestDV(uint trainerIdx, uint trainerClassIdx, bool trainerClassMale, uint pokeIdx, byte pokeLevel, byte baseGenderRatio, int genderOverride, int abilityOverride, uint nature)
         {
-            int DV;
+            byte DV;
 
             for (DV = 255; DV > 0; DV--)
             {
-                if (getNatureFromPID(generatePID(trainerIdx, trainerClassIdx, trainerClassMale, pokeIdx, pokeLevel, DV)) == nature)
+                if (getNatureFromPID(generatePID(trainerIdx, trainerClassIdx, trainerClassMale, pokeIdx, pokeLevel, baseGenderRatio, genderOverride, abilityOverride, DV)) == nature)
                 { return DV; }
             }
 
@@ -44,15 +42,13 @@ namespace DVCalc
 
         }
 
-        //this function is lifted from turtleisaac's Pokeditor
-        //See https://github.com/turtleisaac/PokEditor-v2/blob/72ca6ab641f616b8be9a87624b81896baa45f947/src/com/turtleisaac/pokeditor/utilities/TrainerPersonalityCalculator.java
-        public static uint generatePID(int trainerIdx, int trainerClassIdx, bool trainerClassMale, int pokeIdx, int pokeLevel, int difficultyValue)
+        public static uint generatePID(uint trainerIdx, uint trainerClassIdx, bool trainerClassMale, uint pokeIdx, byte pokeLevel, byte baseGenderRatio, int genderOverride, int abilityOverride, byte difficultyValue)
         {
-            long newSeed = trainerIdx + pokeIdx + pokeLevel + difficultyValue;
-
-            long random = 0;
+            uint newSeed = (uint)(trainerIdx + pokeIdx + pokeLevel + difficultyValue);
 
             setSeed(newSeed);
+
+            uint random = 0;
 
             while (trainerClassIdx > 0)
             {
@@ -60,12 +56,38 @@ namespace DVCalc
                 random = getNextRandom();
             }
 
-            //don't really get this part
-            long PID = (random >> 16) & 0xffff;
-            PID = PID * 256;
+            uint genderMod = 0;
 
-            //this seems super arbitrary (wtf GameFreak?)
-            PID += trainerClassMale ? 136 : 120;
+            // this is always the case in platinum
+            if (genderOverride == 0) 
+            {
+                genderMod = trainerClassMale ? 136u : 120u;
+            }
+
+            // Code from here in is HGSS exclusive
+            if (genderOverride == 1) 
+            {
+                genderMod = baseGenderRatio + 2u;
+            }
+
+            else if (genderOverride == 2)
+            {
+                genderMod = baseGenderRatio - 2u;
+            }
+
+            // Force Ability 1 --> Force lowest bit to 0
+            if (abilityOverride == 1)
+            {
+                genderMod = (uint)(genderMod & ~1);
+            }
+            
+            // Force Ability 2 --> Force lowest bit to 1
+            else if (abilityOverride == 2) 
+            {
+                genderMod = (uint)(genderMod | 1);
+            }
+
+            uint PID = (random << 8) + genderMod;
 
             return (uint)PID;
         }
@@ -75,19 +97,18 @@ namespace DVCalc
             return (PID % 100) % 25;
         }
 
-        public static List<DVIVNatureTriplet> getAllNatures(int trainerIdx, int trainerClassIdx, bool trainerClassMale, int pokeIdx, int pokeLevel)
+        public static List<DVIVNatureTriplet> getAllNatures(uint trainerIdx, uint trainerClassIdx, bool trainerClassMale, uint pokeIdx, byte pokeLevel, byte baseGenderRatio, int genderOverride, int abilityOverride)
         {
             List<DVIVNatureTriplet> natureDict = new List<DVIVNatureTriplet>();
 
-            int DV;
+            byte DV;
             uint natureIdx;
 
             for (DV = 255; DV > 0; DV--)
             {
-                natureIdx = getNatureFromPID(generatePID(trainerIdx, trainerClassIdx, trainerClassMale, pokeIdx, pokeLevel, DV));
+                natureIdx = getNatureFromPID(generatePID(trainerIdx, trainerClassIdx, trainerClassMale, pokeIdx, pokeLevel, baseGenderRatio, genderOverride, abilityOverride, DV));
 
                 natureDict.Add(new DVIVNatureTriplet(DV, DV*31/255 , Natures[(int)natureIdx]));
-
 
             }
 
